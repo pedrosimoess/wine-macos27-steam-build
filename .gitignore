@@ -1,0 +1,16 @@
+# Build output (build.sh uses ~/Games/wine-cx by default; these cover a
+# WINE_CX_DIR pointed inside the repo)
+src/
+build/
+stage/
+logs/
+gcenx-lib
+empty-pkgconfig/
+*.app/
+*.tar.gz
+*.part
+*.log
+
+# OS / tools
+.DS_Store
+.claude/
