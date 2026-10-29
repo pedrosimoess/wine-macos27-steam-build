@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+#
+# cx — small control panel for Wine CX, in the spirit of CrossOver's bottle settings.
+#
+#   ./cx                  show the current state
+#   ./cx steam            launch Steam (same as steam-cx.sh)
+#   ./cx stop             quit Steam and every Wine process
+#   ./cx dxvk  on|off     DirectX 10/11 through DXVK + MoltenVK (needs build-graphics.sh)
+#   ./cx dx9   on|off     DirectX 9 through DXVK too (Wine's own D3D9 works without it)
+#   ./cx retina on|off    high resolution mode (sharp Steam UI on Retina screens), experimental
+#   ./cx avx   on|off     advertise AVX/AVX2 to games (for games that require it)
+#
+# Everything that changes the prefix needs Steam closed. Every "off" undoes its "on".
+# Configuration: WINE_CX_DIR, WINEPREFIX, STEAM_ON_M1_WINE (same defaults as steam-cx.sh)
+set -euo pipefail
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+BASE="${WINE_CX_DIR:-$HOME/Games/wine-cx}"
+PREFIX="${WINEPREFIX:-$HOME/.wine-steam}"
+STEAM_ON_M1_WINE="${STEAM_ON_M1_WINE:-$HOME/steam-on-m1-wine}"
+STATE="$BASE/state"
+WINE="${WINE_APP:-$BASE/Wine CX.app}/Contents/Resources/wine/bin/wine"
+DXVK="$BASE/dxvk-cx"
+sys64="$PREFIX/drive_c/windows/system32"
+sys32="$PREFIX/drive_c/windows/syswow64"
+# Steam's own programs keep Wine's DirectX: with DXVK its web helper never opens a window.
+STEAM_EXES=(steam.exe steamwebhelper.exe steamwebhelper_real.exe steamservice.exe steamsysinfo.exe steamerrorreporter.exe)
+mkdir -p "$STATE"
+
+say()     { printf '%s\n' "$*"; }
+die()     { printf 'cx: %s\n' "$*" >&2; exit 1; }
+is_on()   { [[ -f "$STATE/$1" ]]; }
+running() { pgrep -qf 'Steam\\Steam\.exe|steamwebhelper'; }
+need_closed() { running && die "quit Steam first (Steam > Exit, or: ./cx stop)"; return 0; }
+reg()     { WINEPREFIX="$PREFIX" WINEDEBUG=-all WINEMSYNC=1 /usr/bin/arch -x86_64 "$WINE" reg "$@" >/dev/null 2>&1; }
+settle()  { WINEPREFIX="$PREFIX" WINEMSYNC=1 /usr/bin/arch -x86_64 "${WINE%/wine}/wineserver" -w 2>/dev/null || true; }
+
+# steam-on-m1-wine hard-codes dxgi/d3d11 as native in WINEDLLOVERRIDES, which would
+# override the per-program registry settings above. Let steam-cx.sh replace it.
+patch_launcher() {
+    local f="$STEAM_ON_M1_WINE/scripts/launch-steam.sh"
+    [[ -f "$f" ]] || die "steam-on-m1-wine not found at $STEAM_ON_M1_WINE (set STEAM_ON_M1_WINE)"
+    grep -q 'STEAM_WINEDLLOVERRIDES' "$f" && return 0
+    cp -p "$f" "$f.orig"
+    perl -pi -e 's/^export WINEDLLOVERRIDES="(dxgi,d3d11,d3d10core=n,b;[^"]*)"$/export WINEDLLOVERRIDES="\$\{STEAM_WINEDLLOVERRIDES:-$1\}"/' "$f"
+    grep -q 'STEAM_WINEDLLOVERRIDES' "$f" || die "could not patch $f; see README"
+    say "patched $f (original kept as launch-steam.sh.orig)"
+}
+
+dlls_on() {  # $1 = state name, rest = DLLs
+    local name="$1"; shift
+    is_on "$name" && { say "$name is already on"; return 0; }
+    need_closed
+    [[ -f "$DXVK/x64/d3d11.dll" ]] || die "DXVK not found in $DXVK (run build-graphics.sh)"
+    patch_launcher
+    local bk="$PREFIX/.cx-backup/$name"
+    mkdir -p "$bk/x64" "$bk/x32"
+    for d in "$@"; do
+        [[ -f "$DXVK/x64/$d.dll" && -f "$DXVK/x32/$d.dll" ]] || die "$d.dll was not built"
+        cp -p "$sys64/$d.dll" "$bk/x64/" 2>/dev/null || true
+        cp -p "$sys32/$d.dll" "$bk/x32/" 2>/dev/null || true
+        cp -f "$DXVK/x64/$d.dll" "$sys64/"
+        cp -f "$DXVK/x32/$d.dll" "$sys32/"
+        reg add 'HKCU\Software\Wine\DllOverrides' /v "$d" /d native,builtin /f
+        for e in "${STEAM_EXES[@]}"; do
+            reg add "HKCU\\Software\\Wine\\AppDefaults\\$e\\DllOverrides" /v "$d" /d builtin /f
+        done
+    done
+    reg query 'HKCU\Software\Wine\AppDefaults\steamwebhelper_real.exe\DllOverrides' \
+        || die "could not write the per-program registry settings"
+    settle
+    printf '%s\n' "$@" >"$STATE/$name"
+    say "$name on."
+}
+
+dlls_off() {  # $1 = state name
+    local name="$1"
+    is_on "$name" || { say "$name is already off"; return 0; }
+    need_closed
+    local bk="$PREFIX/.cx-backup/$name" d e
+    while read -r d; do
+        [[ -n "$d" ]] || continue
+        if [[ -f "$bk/x64/$d.dll" ]]; then cp -p "$bk/x64/$d.dll" "$sys64/"; fi
+        if [[ -f "$bk/x32/$d.dll" ]]; then cp -p "$bk/x32/$d.dll" "$sys32/"; fi
+        reg delete 'HKCU\Software\Wine\DllOverrides' /v "$d" /f || true
+        for e in "${STEAM_EXES[@]}"; do
+            reg delete "HKCU\\Software\\Wine\\AppDefaults\\$e\\DllOverrides" /v "$d" /f || true
+        done
+    done <"$STATE/$name"
+    settle
+    rm -rf "${bk:?}" "${STATE:?}/${name:?}"
+    say "$name off."
+}
+
+flag() {
+    case "$2" in
+        on)  touch "$STATE/$1"; say "$1 on (applies next time Steam starts).";;
+        off) rm -f "$STATE/$1"; say "$1 off (applies next time Steam starts).";;
+        *)   die "use: ./cx $1 on|off";;
+    esac
+}
+
+status() {
+    s() { if is_on "$1"; then echo on; else echo off; fi; }
+    say "Wine CX — $(/usr/bin/arch -x86_64 "$WINE" --version 2>/dev/null) — prefix $PREFIX"
+    say "Steam:   $(if running; then echo running; else echo closed; fi)"
+    say "dxvk:    $(s dxvk)   (DirectX 10/11)"
+    say "dx9:     $(s dx9)   (DirectX 9 through DXVK)"
+    say "retina:  $(s retina)   (experimental)"
+    say "avx:     $(s avx)"
+}
+
+cmd="${1:-status}"; arg="${2:-}"
+case "$cmd" in
+    status) status ;;
+    steam)  exec bash "$HERE/steam-cx.sh" ;;
+    stop)   pkill -9 -i -f '\.exe|wineserver|wine64-preloader' || true; say "Steam and Wine closed." ;;
+    dxvk)   case "$arg" in on) dlls_on dxvk d3d10core d3d11 dxgi;; off) dlls_off dxvk;; *) die "use: ./cx dxvk on|off";; esac ;;
+    dx9)    case "$arg" in on) dlls_on dx9 d3d9;; off) dlls_off dx9;; *) die "use: ./cx dx9 on|off";; esac ;;
+    retina)
+        need_closed
+        case "$arg" in
+            on)  reg add 'HKCU\Software\Wine\Mac Driver' /v RetinaMode /d y /f
+                 reg add 'HKCU\Control Panel\Desktop' /v LogPixels /t REG_DWORD /d 192 /f ;;
+            off) reg delete 'HKCU\Software\Wine\Mac Driver' /v RetinaMode /f || true
+                 reg add 'HKCU\Control Panel\Desktop' /v LogPixels /t REG_DWORD /d 96 /f ;;
+            *)   die "use: ./cx retina on|off" ;;
+        esac
+        settle; flag retina "$arg" ;;
+    avx)    flag avx "$arg" ;;
+    -h|--help|help) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//' ;;
+    *) die "unknown command: $cmd (see: ./cx help)" ;;
+esac

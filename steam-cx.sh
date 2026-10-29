@@ -21,6 +21,26 @@ export WINEMSYNC="${WINEMSYNC:-1}"
 # Keep the real one, so an existing prefix (created by Wine Stable) still finds
 # its user folder, Steam login and settings.
 export CX_REPORT_REAL_USERNAME=1
+export MVK_CONFIG_LOG_LEVEL="${MVK_CONFIG_LOG_LEVEL:-1}"
+
+# Options set with ./cx
+STATE="$WINE_CX_DIR/state"
+# avx: Rosetta runs AVX/AVX2, but only advertises it to games with this variable.
+if [[ -f "$STATE/avx" || "${CX_AVX:-0}" == 1 ]]; then
+    export ROSETTA_ADVERTISE_AVX=1
+fi
+# dxvk/dx9: drop dxgi/d3d11 from WINEDLLOVERRIDES so the registry applies
+# (DXVK for games, Wine's DirectX for Steam itself). Needs the launch-steam.sh
+# patch that ./cx dxvk on applies.
+if [[ -f "$STATE/dxvk" || -f "$STATE/dx9" ]]; then
+    export STEAM_WINEDLLOVERRIDES="bcrypt=b;ncrypt=b;gameoverlayrenderer,gameoverlayrenderer64=d"
+fi
+# retina: a virtual desktop at 2x, matching the Retina pixel size.
+if [[ -f "$STATE/retina" && -z "${WINE_VIRTUAL_DESKTOP+x}" ]]; then
+    b="$(osascript -e 'tell application "Finder" to get bounds of window of desktop' 2>/dev/null || true)"
+    w="$(echo "$b" | awk -F', ' '{print $3}')"; h="$(echo "$b" | awk -F', ' '{print $4}')"
+    if [[ -n "$w" && -n "$h" ]]; then export WINE_VIRTUAL_DESKTOP="$((w * 2))x$((h * 2))"; fi
+fi
 
 launcher="$STEAM_ON_M1_WINE/scripts/launch-steam.sh"
 [[ -f "$launcher" ]] || { echo "steam-on-m1-wine not found at $STEAM_ON_M1_WINE (set STEAM_ON_M1_WINE)" >&2; exit 1; }

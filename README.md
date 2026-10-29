@@ -58,9 +58,36 @@ cp -cR ~/.wine-steam ~/.wine-steam-cx
 WINEPREFIX=~/.wine-steam-cx bash steam-cx.sh
 ```
 
+### DirectX 10/11 (optional)
+
+Out of the box, Wine CX only offers Direct3D 11 at feature level 9_3, and most DirectX 11 games refuse to start. CrossOver solves this with DXVK and its own MoltenVK, both included in the same source release. `build-graphics.sh` builds them; it needs full Xcode with its license accepted, and takes about 15 minutes:
+
+```bash
+sudo /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -license
+bash build-graphics.sh
+./cx dxvk on       # with Steam closed
+```
+
+Games then get Direct3D 11 (feature level 11_0) in 32 and 64 bit. Steam's own processes keep Wine's DirectX through per-program overrides, the same way CrossOver configures them: with DXVK, Steam's web helper never opens its window. For that to work, `./cx dxvk on` patches one line of steam-on-m1-wine's `launch-steam.sh` (the original is kept as `launch-steam.sh.orig`).
+
+`./cx dx9 on` also routes Direct3D 9 through DXVK. Wine's own Direct3D 9 already works, so this one is optional.
+
+### The `cx` panel
+
+| Command | What it does |
+| --- | --- |
+| `./cx` | Shows what is on |
+| `./cx steam` / `./cx stop` | Launch Steam / quit Steam and every Wine process |
+| `./cx dxvk on\|off` | DirectX 10/11 through DXVK |
+| `./cx dx9 on\|off` | DirectX 9 through DXVK |
+| `./cx avx on\|off` | Advertise AVX/AVX2 to games. Rosetta runs these instructions but hides them unless `ROSETTA_ADVERTISE_AVX=1` is set; CrossOver turns this on per game |
+| `./cx retina on\|off` | High resolution mode (sharp UI on Retina screens). Experimental |
+
+Every `off` undoes its `on`, and every change that touches the prefix asks you to quit Steam first.
+
 ### Configuration
 
-Both scripts read environment variables. `bash build.sh --help` lists them.
+The scripts read environment variables. `bash build.sh --help` lists them.
 
 | Variable | Default | Used by |
 | --- | --- | --- |
@@ -96,6 +123,9 @@ The build mirrors the options of Gcenx's wine-stable, plus fixes for problems th
 | Gcenx's dylibs have unversioned install names, so configure detects garbage SONAMEs | SONAMEs passed explicitly with `ac_cv_lib_soname_*` |
 | `sfnt2fon` aborts because dyld can't find `libfreetype.dylib` | Gcenx dylibs symlinked into the build folder |
 | CrossOver's `CW HACK 25909` in `win32u/vulkan.c` requires `SONAME_LIBVULKAN` | Built `--with-vulkan` against the MoltenVK bundled with Wine Stable |
+| DXVK 1.10.3 no longer compiles with GCC 16 mingw-w64 (missing `<cstdint>`, workarounds that now clash with the headers) | `build-graphics.sh` forces `-include cstdint` and disables the two outdated workarounds |
+| DXVK refuses every feature level on upstream MoltenVK (no geometry shaders) | `build-graphics.sh` builds CodeWeavers' MoltenVK, which reports them |
+| MoltenVK's Xcode projects target macOS 10.15, which Xcode 27 rejects | Deployment target raised to 12.0 |
 
 Which CodeWeavers patch fixes the lobbies hasn't been isolated yet. The likely candidates are in the network code (`nsiproxy`, `ws2_32`). If you find it, please open an issue.
 
