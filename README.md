@@ -72,6 +72,14 @@ Games then get Direct3D 11 (feature level 11_0) in 32 and 64 bit. Steam's own pr
 
 `./cx dx9 on` also routes Direct3D 9 through DXVK. Wine's own Direct3D 9 already works, so this one is optional.
 
+### Game videos (optional)
+
+Wine plays in-game videos and cutscenes through GStreamer, which `build.sh` leaves out. Without it, games that play videos through Windows' media APIs show a black screen or skip them. `build-gstreamer.sh` adds it the way Gcenx's Wine Stable does: it installs the official GStreamer runtime in `/Library/Frameworks` (asking for your password once), downloads the official devel package only for its headers, and compiles Wine's `winegstreamer` against them. Run it with Steam closed; it takes 15 to 30 minutes, mostly the ~800 MB download, which is deleted afterwards:
+
+```bash
+bash build-gstreamer.sh
+```
+
 ### The `cx` panel
 
 | Command | What it does |
@@ -97,7 +105,7 @@ The scripts read environment variables. `bash build.sh --help` lists them.
 | `JOBS` | number of CPU cores | `build.sh` |
 | `STEAM_ON_M1_WINE` | `~/steam-on-m1-wine` | `steam-cx.sh` |
 | `WINE_APP` | `$WINE_CX_DIR/Wine CX.app` | `steam-cx.sh` |
-| `WINEPREFIX` | `~/.wine-steam` | `steam-cx.sh` |
+| `WINEPREFIX` | `~/.wine-steam` | `steam-cx.sh`, `cx`, `build-gstreamer.sh` |
 | `WINEMSYNC` | `1` | `steam-cx.sh` |
 
 ### Troubleshooting
@@ -110,7 +118,7 @@ The scripts read environment variables. `bash build.sh --help` lists them.
 
 Keep `src/` and `build/` in `~/Games/wine-cx` and `build.sh` only recompiles what changed. The build folder depends on the sources, so move or delete them together.
 
-To uninstall, delete `~/Games/wine-cx`. Prefixes and `Wine Stable.app` are never modified by `build.sh`.
+To uninstall, delete `~/Games/wine-cx`. Prefixes and `Wine Stable.app` are never modified by `build.sh`. If you ran `build-gstreamer.sh`, also remove GStreamer with `sudo rm -rf /Library/Frameworks/GStreamer.framework` (unless another app uses it, such as Wine Stable).
 
 ## What it takes to build CrossOver's Wine on macOS 27
 
@@ -126,6 +134,8 @@ The build mirrors the options of Gcenx's wine-stable, plus fixes for problems th
 | DXVK 1.10.3 no longer compiles with GCC 16 mingw-w64 (missing `<cstdint>`, workarounds that now clash with the headers) | `build-graphics.sh` forces `-include cstdint` and disables the two outdated workarounds |
 | DXVK refuses every feature level on upstream MoltenVK (no geometry shaders) | `build-graphics.sh` builds CodeWeavers' MoltenVK, which reports them |
 | MoltenVK's Xcode projects target macOS 10.15, which Xcode 27 rejects | Deployment target raised to 12.0 |
+| The official GStreamer packages have no pkg-config setup for an x86_64 build, and ship one `glibconfig.h` per architecture | `build-gstreamer.sh` passes the GStreamer flags explicitly and picks the x86_64 `glibconfig.h` |
+| `wineboot -u` also starts Steam, because Steam is in the prefix's Run key | `build-gstreamer.sh` registers `winegstreamer` with `regsvr32` instead |
 
 Which CodeWeavers patch fixes the lobbies hasn't been isolated yet. The likely candidates are in the network code (`nsiproxy`, `ws2_32`). If you find it, please open an issue.
 
