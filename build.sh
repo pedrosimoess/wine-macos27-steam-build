@@ -29,6 +29,7 @@ CX_VERSION="26.3.0"
 CX_URL="https://media.codeweavers.com/pub/crossover/source/crossover-sources-${CX_VERSION}.tar.gz"
 CX_SHA256="ac99c8ca4b3848f3e81784135f023df266b61c2345726ea55a50b3e030dd6872"
 
+HERE="$(cd "$(dirname "$0")" && pwd)"
 BASE="${WINE_CX_DIR:-$HOME/Games/wine-cx}"
 SRC="$BASE/src"
 BUILD="$BASE/build"
@@ -108,6 +109,19 @@ if [[ ! -f "$SRC/configure" ]]; then
 fi
 grep -q '^Wine version 11.0' "$SRC/VERSION" || die "unexpected source version: $(cat "$SRC/VERSION")"
 ok "$(cat "$SRC/VERSION") (CrossOver $CX_VERSION)"
+
+# Our own fixes on top of CrossOver's code (see patches/).
+for p in "$HERE"/patches/*.patch; do
+    name="$(basename "$p")"
+    if patch -d "$SRC" -p1 -R -s -f --dry-run <"$p" >/dev/null 2>&1; then
+        ok "$name already applied"
+    elif patch -d "$SRC" -p1 -N -s --dry-run <"$p" >/dev/null 2>&1; then
+        patch -d "$SRC" -p1 -N -s <"$p"
+        ok "$name applied"
+    else
+        die "$name does not apply to these sources"
+    fi
+done
 
 # --- 3. x86_64 libraries from Wine Stable -------------------------------------
 step "x86_64 libraries from Wine Stable"

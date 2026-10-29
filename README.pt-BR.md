@@ -134,6 +134,7 @@ O build usa as mesmas opções do wine-stable do Gcenx, mais correções para pr
 | O DXVK 1.10.3 não compila mais com o mingw-w64 do GCC 16 (falta `<cstdint>`, e dois remendos antigos conflitam com os headers) | O `build-graphics.sh` força `-include cstdint` e desativa os dois remendos |
 | O DXVK recusa todos os níveis com o MoltenVK comum (sem geometry shaders) | O `build-graphics.sh` compila o MoltenVK da CodeWeavers, que oferece esse recurso |
 | Os projetos do MoltenVK pedem macOS 10.15, que o Xcode 27 não aceita | Versão mínima elevada para 12.0 |
+| O steam-on-m1-wine roda a Steam numa área de trabalho virtual sem borda, e o macOS não deixa minimizar janelas sem borda pelo menu Janela | O `patches/winemac-minimize.patch` libera o Minimizar (também com Cmd-M) e dá ao Ocultar o atalho Cmd-H; o `build.sh` aplica ele |
 | Os pacotes oficiais do GStreamer não trazem pkg-config pronto para um build x86_64, e têm um `glibconfig.h` por arquitetura | O `build-gstreamer.sh` passa as opções do GStreamer direto e usa o `glibconfig.h` x86_64 |
 | O `wineboot -u` também abre a Steam, porque ela está na chave Run do prefixo | O `build-gstreamer.sh` registra o `winegstreamer` com `regsvr32` |
 

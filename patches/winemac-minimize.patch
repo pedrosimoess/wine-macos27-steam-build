@@ -1,0 +1,61 @@
+Wine CX: make Window > Minimize (Cmd-M) work on borderless windows such as the
+steam-on-m1-wine virtual desktop, and give Hide the usual Cmd-H shortcut.
+
+--- a/dlls/winemac.drv/cocoa_app.m
++++ b/dlls/winemac.drv/cocoa_app.m
+@@ -346,7 +346,7 @@
+                 title = [NSString stringWithFormat:WineLocalizedString(STRING_MENU_ITEM_HIDE_APPNAME), bundleName];
+             else
+                 title = WineLocalizedString(STRING_MENU_ITEM_HIDE);
+-            item = [submenu addItemWithTitle:title action:@selector(hide:) keyEquivalent:@""];
++            item = [submenu addItemWithTitle:title action:@selector(hide:) keyEquivalent:@"h"]; /* Wine CX: Cmd-H hides Wine */
+ 
+             item = [submenu addItemWithTitle:WineLocalizedString(STRING_MENU_ITEM_HIDE_OTHERS)
+                                       action:@selector(hideOtherApplications:)
+@@ -391,7 +391,7 @@
+             submenu = [[[NSMenu alloc] initWithTitle:WineLocalizedString(STRING_MENU_WINDOW)] autorelease];
+             [submenu addItemWithTitle:WineLocalizedString(STRING_MENU_ITEM_MINIMIZE)
+                                action:@selector(performMiniaturize:)
+-                        keyEquivalent:@""];
++                        keyEquivalent:@"m"]; /* Wine CX: Cmd-M minimizes */
+             [submenu addItemWithTitle:WineLocalizedString(STRING_MENU_ITEM_ZOOM)
+                                action:@selector(performZoom:)
+                         keyEquivalent:@""];
+--- a/dlls/winemac.drv/cocoa_window.m
++++ b/dlls/winemac.drv/cocoa_window.m
+@@ -2524,6 +2524,9 @@
+             ret = [self isKeyWindow] || (!self.disabled && !self.noForeground);
+         else if ([menuItem action] == @selector(undo:)) // CrossOver Hack 10912: Mac Edit menu
+             ret = TRUE;
++        else if ([menuItem action] == @selector(performMiniaturize:) &&
++                 !([self styleMask] & NSWindowStyleMaskMiniaturizable)) /* Wine CX: borderless windows */
++            ret = !self.disabled && [self isVisible];
+         if ([menuItem action] == @selector(toggleFullScreen:) && (self.disabled || maximized))
+             ret = NO;
+ 
+@@ -2701,6 +2704,25 @@
+     - (void) undo:(id)sender
+     {
+         [self sendEditMenuCommand:EDIT_COMMAND_UNDO];
++    }
++
++    /* Wine CX: borderless windows (e.g. a virtual desktop) have no minimize
++     * button, so AppKit refuses Window > Minimize for them. Minimize them on
++     * the Mac side only; clicking the Dock tile brings them back. */
++    - (void) performMiniaturize:(id)sender
++    {
++        if (!([self styleMask] & NSWindowStyleMaskMiniaturizable))
++        {
++            if (self.disabled || ![self isVisible])
++            {
++                NSBeep();
++                return;
++            }
++            [self setStyleMask:([self styleMask] | NSWindowStyleMaskMiniaturizable)];
++            [super miniaturize:sender];
++            return;
++        }
++        [super performMiniaturize:sender];
+     }
+ 
+     - (void) miniaturize:(id)sender
